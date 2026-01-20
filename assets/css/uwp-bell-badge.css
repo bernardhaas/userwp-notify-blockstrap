@@ -1,0 +1,20 @@
+.uwp-bell-link {
+	position: relative;
+}
+
+.uwp-bell-badge {
+	position: absolute;
+	top: -0.25rem;
+	right: -0.35rem;
+	min-width: 1.15rem;
+	height: 1.15rem;
+	padding: 0 0.25rem;
+	border-radius: 999px;
+	background-color: #dc3545; /* Bootstrap danger */
+	color: #fff;
+	font-size: 0.7rem;
+	line-height: 1.15rem;
+	text-align: center;
+	display: inline-block;
+	box-shadow: 0 0 0 1px #fff;
+}
