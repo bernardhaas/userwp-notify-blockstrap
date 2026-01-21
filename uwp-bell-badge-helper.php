@@ -69,6 +69,12 @@ final class UWP_Bell_Badge_Helper {
 	 */
 	private function __construct() {
 		add_action( 'init', array( $this, 'maybe_load' ) );
+
+		// Admin hooks.
+		if ( is_admin() ) {
+			add_action( 'admin_menu', array( $this, 'register_admin_menu' ) );
+			add_action( 'admin_post_uwp_bell_badge_save', array( $this, 'handle_form_submission' ) );
+		}
 	}
 
 	/**
@@ -225,6 +231,272 @@ final class UWP_Bell_Badge_Helper {
 				'nonce' => wp_create_nonce( 'wp_rest' ),
 			)
 		);
+
+		// Add inline CSS based on settings.
+		$settings = $this->get_badge_settings();
+		$inline_css = $this->generate_badge_css( $settings );
+		wp_add_inline_style( $css_handle, $inline_css );
+	}
+
+	/**
+	 * Get badge settings with defaults.
+	 *
+	 * @return array Settings array with default values.
+	 */
+	private function get_badge_settings(): array {
+		$defaults = array(
+			'badge_color' => '#dc3545',
+			'font_color'  => '#ffffff',
+			'size'        => '1x',
+			'style'       => 'round',
+		);
+
+		return wp_parse_args( get_option( 'uwp_bell_badge_settings', array() ), $defaults );
+	}
+
+	/**
+	 * Register admin menu item.
+	 *
+	 * @return void
+	 */
+	public function register_admin_menu(): void {
+		add_submenu_page(
+			'options-general.php',
+			__( 'Notify Count Settings', 'uwp-bell-badge-helper' ),
+			__( 'Notify Count', 'uwp-bell-badge-helper' ),
+			'manage_options',
+			'uwp-bell-badge-settings',
+			array( $this, 'render_admin_page' )
+		);
+	}
+
+	/**
+	 * Render admin settings page.
+	 *
+	 * @return void
+	 */
+	public function render_admin_page(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have sufficient permissions to access this page.', 'uwp-bell-badge-helper' ) );
+		}
+
+		$settings = $this->get_badge_settings();
+
+		// Show admin notices.
+		if ( isset( $_GET['settings-updated'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$message = isset( $_GET['reset'] ) && '1' === $_GET['reset'] // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+				? __( 'Settings reset to defaults.', 'uwp-bell-badge-helper' )
+				: __( 'Settings saved.', 'uwp-bell-badge-helper' );
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( $message ) . '</p></div>';
+		}
+
+		?>
+		<div class="wrap">
+			<h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<?php wp_nonce_field( 'uwp_bell_badge_settings', 'uwp_bell_badge_nonce' ); ?>
+				<input type="hidden" name="action" value="uwp_bell_badge_save" />
+
+				<table class="form-table" role="presentation">
+					<tbody>
+						<tr>
+							<th scope="row">
+								<label for="badge_color"><?php esc_html_e( 'Badge Color', 'uwp-bell-badge-helper' ); ?></label>
+							</th>
+							<td>
+								<input 
+									type="text" 
+									id="badge_color" 
+									name="badge_color" 
+									value="<?php echo esc_attr( $settings['badge_color'] ); ?>" 
+									class="regular-text" 
+									pattern="^#[0-9A-Fa-f]{6}$"
+									placeholder="#dc3545"
+								/>
+								<p class="description"><?php esc_html_e( 'Enter a hex color code (e.g., #dc3545).', 'uwp-bell-badge-helper' ); ?></p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="font_color"><?php esc_html_e( 'Font Color', 'uwp-bell-badge-helper' ); ?></label>
+							</th>
+							<td>
+								<input 
+									type="text" 
+									id="font_color" 
+									name="font_color" 
+									value="<?php echo esc_attr( $settings['font_color'] ); ?>" 
+									class="regular-text" 
+									pattern="^#[0-9A-Fa-f]{6}$"
+									placeholder="#ffffff"
+								/>
+								<p class="description"><?php esc_html_e( 'Enter a hex color code (e.g., #ffffff).', 'uwp-bell-badge-helper' ); ?></p>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="size"><?php esc_html_e( 'Badge Size', 'uwp-bell-badge-helper' ); ?></label>
+							</th>
+							<td>
+								<select id="size" name="size">
+									<option value="0.66x" <?php selected( $settings['size'], '0.66x' ); ?>><?php esc_html_e( '0.66x', 'uwp-bell-badge-helper' ); ?></option>
+									<option value="1x" <?php selected( $settings['size'], '1x' ); ?>><?php esc_html_e( '1x', 'uwp-bell-badge-helper' ); ?></option>
+									<option value="1.25x" <?php selected( $settings['size'], '1.25x' ); ?>><?php esc_html_e( '1.25x', 'uwp-bell-badge-helper' ); ?></option>
+								</select>
+							</td>
+						</tr>
+						<tr>
+							<th scope="row">
+								<label for="style"><?php esc_html_e( 'Badge Style', 'uwp-bell-badge-helper' ); ?></label>
+							</th>
+							<td>
+								<select id="style" name="style">
+									<option value="round" <?php selected( $settings['style'], 'round' ); ?>><?php esc_html_e( 'Round', 'uwp-bell-badge-helper' ); ?></option>
+									<option value="card" <?php selected( $settings['style'], 'card' ); ?>><?php esc_html_e( 'Card', 'uwp-bell-badge-helper' ); ?></option>
+									<option value="square" <?php selected( $settings['style'], 'square' ); ?>><?php esc_html_e( 'Square', 'uwp-bell-badge-helper' ); ?></option>
+								</select>
+							</td>
+						</tr>
+					</tbody>
+				</table>
+
+				<p class="submit">
+					<?php submit_button( __( 'Save Settings', 'uwp-bell-badge-helper' ), 'primary', 'submit', false ); ?>
+					<?php submit_button( __( 'Reset to Defaults', 'uwp-bell-badge-helper' ), 'secondary', 'reset', false ); ?>
+				</p>
+			</form>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Handle form submission (save or reset).
+	 *
+	 * @return void
+	 */
+	public function handle_form_submission(): void {
+		// Check permissions.
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have sufficient permissions to access this page.', 'uwp-bell-badge-helper' ) );
+		}
+
+		// Handle reset (check if reset button was clicked).
+		if ( isset( $_POST['reset'] ) ) {
+			// Verify nonce for reset action.
+			if ( ! isset( $_POST['uwp_bell_badge_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['uwp_bell_badge_nonce'] ) ), 'uwp_bell_badge_settings' ) ) {
+				wp_die( esc_html__( 'Security check failed.', 'uwp-bell-badge-helper' ) );
+			}
+			delete_option( 'uwp_bell_badge_settings' );
+			wp_safe_redirect(
+				add_query_arg(
+					array(
+						'page'            => 'uwp-bell-badge-settings',
+						'settings-updated' => 'true',
+						'reset'           => '1',
+					),
+					admin_url( 'options-general.php' )
+				)
+			);
+			exit;
+		}
+
+		// Verify nonce for save action.
+		if ( ! isset( $_POST['uwp_bell_badge_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['uwp_bell_badge_nonce'] ) ), 'uwp_bell_badge_settings' ) ) {
+			wp_die( esc_html__( 'Security check failed.', 'uwp-bell-badge-helper' ) );
+		}
+
+		// Validate and sanitize inputs.
+		$badge_color = isset( $_POST['badge_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['badge_color'] ) ) : '#dc3545';
+		$font_color  = isset( $_POST['font_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['font_color'] ) ) : '#ffffff';
+
+		// Validate size (don't use sanitize_key as it removes dots).
+		$size = isset( $_POST['size'] ) ? sanitize_text_field( wp_unslash( $_POST['size'] ) ) : '1x';
+		$allowed_sizes = array( '0.66x', '1x', '1.25x' );
+		if ( ! in_array( $size, $allowed_sizes, true ) ) {
+			$size = '1x';
+		}
+
+		// Validate style.
+		$style = isset( $_POST['style'] ) ? sanitize_text_field( wp_unslash( $_POST['style'] ) ) : 'round';
+		$allowed_styles = array( 'round', 'card', 'square' );
+		if ( ! in_array( $style, $allowed_styles, true ) ) {
+			$style = 'round';
+		}
+
+		// Fallback to defaults if colors are invalid.
+		if ( empty( $badge_color ) ) {
+			$badge_color = '#dc3545';
+		}
+		if ( empty( $font_color ) ) {
+			$font_color = '#ffffff';
+		}
+
+		// Save settings.
+		$settings = array(
+			'badge_color' => $badge_color,
+			'font_color'  => $font_color,
+			'size'        => $size,
+			'style'       => $style,
+		);
+
+		update_option( 'uwp_bell_badge_settings', $settings );
+
+		// Redirect back to settings page.
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'             => 'uwp-bell-badge-settings',
+					'settings-updated' => 'true',
+				),
+				admin_url( 'options-general.php' )
+			)
+		);
+		exit;
+	}
+
+	/**
+	 * Generate CSS based on settings.
+	 *
+	 * @param array $settings Settings array.
+	 * @return string Generated CSS.
+	 */
+	private function generate_badge_css( array $settings ): string {
+		// Map size to font-size.
+		$size_map = array(
+			'0.66x' => '0.66rem',
+			'1x'    => '1.0rem',
+			'1.25x' => '1.25rem',
+		);
+		$font_size = isset( $size_map[ $settings['size'] ] ) ? $size_map[ $settings['size'] ] : '1.0rem';
+
+		// Map style to padding and border-radius.
+		$style_map = array(
+			'round'  => array(
+				'padding'      => '0 0.25rem',
+				'border-radius' => '999px',
+			),
+			'card'   => array(
+				'padding'      => '0.12rem 0.12rem',
+				'border-radius' => '4px',
+			),
+			'square' => array(
+				'padding'      => '0.02rem 0.02rem',
+				'border-radius' => '0px',
+			),
+		);
+		$style_css = isset( $style_map[ $settings['style'] ] ) ? $style_map[ $settings['style'] ] : $style_map['round'];
+
+		// Build CSS.
+		$css = sprintf(
+			'.uwp-bell-badge { background-color: %s; color: %s; font-size: %s; padding: %s; border-radius: %s; }',
+			esc_attr( $settings['badge_color'] ),
+			esc_attr( $settings['font_color'] ),
+			esc_attr( $font_size ),
+			esc_attr( $style_css['padding'] ),
+			esc_attr( $style_css['border-radius'] )
+		);
+
+		return $css;
 	}
 }
 
